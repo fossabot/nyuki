@@ -16,6 +16,19 @@ from .utils.uri import URI
 log = logging.getLogger(__name__)
 
 
+def _migrate_4_0(task):
+    config = task['config']
+    task['config'] = {
+        'template': {
+            'service': 'twilio' if 'twilio' in config['nyuki_api'] else 'pipeline',
+            'id': config['template'],
+            'draft': config.get('draft', False),
+        }
+    }
+    if 'timeout' in config:
+        task['config']['blocking'] = {'timeout': config['timeout']}
+
+
 class WorkflowStatus(Enum):
 
     PENDING = 'pending'
@@ -31,6 +44,10 @@ class TriggerWorkflowTask(TaskHolder):
         'template', 'blocking', 'task', '_engine',
         'status', 'triggered_id', 'async_future',
     )
+
+    MIGRATIONS = {
+        '4.0': _migrate_4_0,
+    }
 
     SCHEMA = {
         'type': 'object',

@@ -1,7 +1,9 @@
+import os
 import asyncio
 import logging
 from pymongo import DESCENDING
 from pymongo.errors import AutoReconnect, DuplicateKeyError
+from tukio.task import TaskRegistry
 from tukio.workflow import TemplateGraphError, WorkflowTemplate
 
 from nyuki.api import Response, resource
@@ -41,6 +43,36 @@ class TemplateCollection:
             [('id', DESCENDING), ('draft', DESCENDING)]
         ))
 
+    async def _migrate(self, template):
+        previous_version = template.get('surycat_version', '1.0')
+        current_version = os.environ.get('SURYCAT_VERSION', previous_version)
+
+        # Do nothing if the previous version is >= than the current one.
+        if previous_version == max(
+            previous_version,
+            current_version,
+            key=lambda v: list(map(int, v.split('.'))),
+        ):
+            return
+
+        # Set the newest version to this template
+        template['surycat_version'] = current_version
+        for task in template['tasks']:
+            task_class, _ = TaskRegistry.get(task['name'])
+            migrations = getattr(task_class, 'MIGRATIONS', {})
+            for version, do_migration in migrations.items():
+                if previous_version >= version:
+                    # Do nothing if it is an outdated migration.
+                    continue
+                # Do one step of migration.
+                do_migration(task)
+
+        log.info('Migrated template %s to %s', template['id'][:8], current_version)
+        await self._templates.replace_one(
+            {'id': template['id'], 'draft': template['draft']},
+            template,
+        )
+
     async def get_metadata(self, tid=None):
         """
         Return metadata
@@ -77,15 +109,21 @@ class TemplateCollection:
 
         # Retrieve the latest versions + drafts
         lasts = {}
-        drafts = []
+        template_list = []
 
         for template in templates:
             if draft and template['draft']:
-                drafts.append(template)
+                template_list.append(template)
             elif latest and not template['draft'] and template['id'] not in lasts:
                 lasts[template['id']] = template
 
-        return drafts + list(lasts.values())
+        # Migration steps
+        if full is True:
+            for template in templates:
+                await self._migrate(template)
+
+        template_list.extend(lasts.values())
+        return template_list
 
     async def get(self, tid, version=None, draft=None, with_metadata=True):
         """
@@ -108,6 +146,9 @@ class TemplateCollection:
             if metadatas:
                 for template in templates:
                     template.update(metadatas[0])
+
+        for template in templates:
+            await self._migrate(template)
 
         return templates
 
@@ -138,7 +179,7 @@ class TemplateCollection:
         log.info('Insert template with query: %s', query)
         try:
             # Copy dict, mongo somehow alter the given dict
-            await self._templates.insert(template.copy())
+            await self._templates.insert_one(template.copy())
         except DuplicateKeyError as exc:
             raise DuplicateTemplateError from exc
 
@@ -193,10 +234,10 @@ class TemplateCollection:
 
         log.info("Removing template(s) with query: %s", query)
 
-        await self._templates.remove(query)
+        await self._templates.delete_many(query)
         left = await self._templates.find({'id': tid}).count()
         if not left:
-            await self._metadata.remove({'id': tid})
+            await self._metadata.delete_one({'id': tid})
 
 
 @resource('/workflow/tasks', versions=['v1'])
