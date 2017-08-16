@@ -91,7 +91,10 @@ class TemplateCollection:
         filters = {'_id': 0}
         # '/v1/workflow/templates' does not requires all the informations
         if full is False:
-            filters.update({'id': 1, 'draft': 1, 'version': 1, 'topics': 1})
+            filters.update({
+                'id': 1, 'draft': 1, 'version': 1, 'topics': 1,
+                'surycat_version': 1,
+            })
 
         cursor = self._templates.find(None, filters)
         cursor.sort('version', DESCENDING)
@@ -105,6 +108,9 @@ class TemplateCollection:
                 template.update(metadatas[template['id']])
 
         if latest is False and draft is False:
+            if full is True:
+                for template in templates:
+                    await self._migrate(template)
             return templates
 
         # Retrieve the latest versions + drafts
@@ -117,12 +123,11 @@ class TemplateCollection:
             elif latest and not template['draft'] and template['id'] not in lasts:
                 lasts[template['id']] = template
 
-        # Migration steps
-        if full is True:
-            for template in templates:
-                await self._migrate(template)
-
+        # Do migrations if the templates are fetched in full.
         template_list.extend(lasts.values())
+        if full is True:
+            for template in template_list:
+                await self._migrate(template)
         return template_list
 
     async def get(self, tid, version=None, draft=None, with_metadata=True):
@@ -168,10 +173,8 @@ class TemplateCollection:
         """
         Insert a template dict, not updatable
         """
-        query = {
-            'id': template['id'],
-            'version': template['version']
-        }
+        query = {'id': template['id'], 'version': template['version']}
+        template['surycat_version'] = os.environ.get('SURYCAT_VERSION', '4.0')
 
         # Remove draft if any
         await self.delete(template['id'], template['version'], True)
@@ -187,10 +190,8 @@ class TemplateCollection:
         """
         Check and insert draft, updatable
         """
-        query = {
-            'id': template['id'],
-            'draft': True
-        }
+        query = {'id': template['id'], 'draft': True}
+        template['surycat_version'] = os.environ.get('SURYCAT_VERSION', '4.0')
 
         try:
             log.info('Update draft for query: %s', query)
