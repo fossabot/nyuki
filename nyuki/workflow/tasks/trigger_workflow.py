@@ -16,7 +16,7 @@ from .utils.uri import URI
 log = logging.getLogger(__name__)
 
 
-def _migrate_4_0(task):
+def _migrate_1(task):
     config = task['config']
     task['config'] = {
         'template': {
@@ -45,9 +45,9 @@ class TriggerWorkflowTask(TaskHolder):
         'status', 'triggered_id', 'async_future',
     )
 
-    MIGRATIONS = {
-        '4.0': _migrate_4_0,
-    }
+    MIGRATIONS = [
+        _migrate_1,
+    ]
 
     SCHEMA = {
         'type': 'object',

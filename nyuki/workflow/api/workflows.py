@@ -48,6 +48,7 @@ class InstanceCollections:
         'config': 1,
         'topics': 1,
         'title': 1,
+        'scheme': 1,
         # Exec
         'exec.id': 1,
         'exec.start': 1,

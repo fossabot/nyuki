@@ -44,34 +44,31 @@ class TemplateCollection:
         ))
 
     async def _migrate(self, template):
-        previous_version = template.get('surycat_version', '1.0')
-        current_version = os.environ.get('SURYCAT_VERSION', previous_version)
-
-        # Do nothing if the previous version is >= than the current one.
-        if previous_version == max(
-            previous_version,
-            current_version,
-            key=lambda v: list(map(int, v.split('.'))),
-        ):
-            return
-
-        # Set the newest version to this template
-        template['surycat_version'] = current_version
+        # Check and do migrations if needed
+        must_save = False
         for task in template['tasks']:
+            old_scheme = task.get('scheme', 0)
             task_class, _ = TaskRegistry.get(task['name'])
-            migrations = getattr(task_class, 'MIGRATIONS', {})
-            for version, do_migration in migrations.items():
-                if previous_version >= version:
-                    # Do nothing if it is an outdated migration.
-                    continue
+            migrations = getattr(task_class, 'MIGRATIONS', [])
+
+            # Go through each migration after the current one.
+            scheme = old_scheme
+            for do_migration in migrations[scheme:]:
+                scheme += 1
                 # Do one step of migration.
                 do_migration(task)
+                task['scheme'] = scheme
+                must_save = True
+                log.info(
+                    'Migrated task %s of template %s from %s to %s',
+                    task['id'], template['id'], old_scheme, scheme,
+                )
 
-        log.info('Migrated template %s to %s', template['id'][:8], current_version)
-        await self._templates.replace_one(
-            {'id': template['id'], 'draft': template['draft']},
-            template,
-        )
+        if must_save:
+            await self._templates.replace_one(
+                {'id': template['id'], 'draft': template['draft']},
+                template,
+            )
 
     async def get_metadata(self, tid=None):
         """
@@ -91,10 +88,7 @@ class TemplateCollection:
         filters = {'_id': 0}
         # '/v1/workflow/templates' does not requires all the informations
         if full is False:
-            filters.update({
-                'id': 1, 'draft': 1, 'version': 1, 'topics': 1,
-                'surycat_version': 1,
-            })
+            filters.update({'id': 1, 'draft': 1, 'version': 1, 'topics': 1})
 
         cursor = self._templates.find(None, filters)
         cursor.sort('version', DESCENDING)
@@ -174,7 +168,6 @@ class TemplateCollection:
         Insert a template dict, not updatable
         """
         query = {'id': template['id'], 'version': template['version']}
-        template['surycat_version'] = os.environ.get('SURYCAT_VERSION', '4.0')
 
         # Remove draft if any
         await self.delete(template['id'], template['version'], True)
@@ -191,7 +184,6 @@ class TemplateCollection:
         Check and insert draft, updatable
         """
         query = {'id': template['id'], 'draft': True}
-        template['surycat_version'] = os.environ.get('SURYCAT_VERSION', '4.0')
 
         try:
             log.info('Update draft for query: %s', query)
@@ -257,7 +249,7 @@ class _TemplateResource:
     Share methods between templates resources
     """
 
-    async def update_draft(self, template, from_request=None):
+    async def update_draft(self, template, from_request):
         """
         Helper to insert/update a draft
         """
@@ -270,14 +262,18 @@ class _TemplateResource:
         tmpl_dict['version'] = last_version + 1
         tmpl_dict['draft'] = True
 
-        # Store task extra info (ie. title)
-        if from_request is not None:
-            rqst_tasks = from_request.get('tasks', [])
-            tmpl_tasks = tmpl_dict['tasks']
-            for src in rqst_tasks:
-                match = list(filter(lambda t: t['id'] == src['id'], tmpl_tasks))
-                if match:
-                    match[0].update({'title': src.get('title')})
+        # Store task extra info (ie. title, scheme)
+        rqst_tasks = from_request.get('tasks', [])
+        tmpl_tasks = tmpl_dict['tasks']
+        for src in rqst_tasks:
+            match = list(filter(lambda t: t['id'] == src['id'], tmpl_tasks))
+            if match:
+                task_class, _ = TaskRegistry.get(src['name'])
+                match[0].update({
+                    'title': src.get('title'),
+                    # Set latest scheme
+                    'scheme': len(getattr(task_class, 'MIGRATIONS', [])),
+                })
 
         try:
             await self.nyuki.storage.templates.insert_draft(tmpl_dict)
