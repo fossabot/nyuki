@@ -310,7 +310,8 @@ class ApiWorkflows(_WorkflowResource):
         elif draft:
             wflow = await self.nyuki.engine.run_once(wf_tmpl, data)
         else:
-            wflow = await self.nyuki.engine.trigger(wf_tmpl.uid, data)
+            # Avoid using the engine's workflow selector.
+            wflow = self.nyuki.engine._try_run(wf_tmpl, data)
 
         if wflow is None:
             return Response(status=400, body={
@@ -331,7 +332,7 @@ class ApiWorkflows(_WorkflowResource):
                 })
 
         # Keep full instance+template in nyuki's memory
-        wfinst = self.nyuki.new_workflow(
+        wfinst = self.nyuki.retain_workflow(
             templates[0], wflow,
             track=exec_track,
             requester=requester

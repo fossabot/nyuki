@@ -79,8 +79,8 @@ class WorkflowInstance:
 
     ALLOWED_EXEC_KEYS = ['requester', 'track']
 
-    def __init__(self, template, instance, **kwargs):
-        self._template = template
+    def __init__(self, template_dict, instance, **kwargs):
+        self._template = template_dict
         self._instance = instance
         self._exec = {
             key: kwargs[key]
@@ -104,7 +104,7 @@ class WorkflowInstance:
         """
         Merge a workflow exec instance report and its template.
         """
-        template = self._template.copy()
+        template = self.template.copy()
         inst = self._instance.report()
         inst['exec'].update(self._exec)
 
@@ -221,7 +221,7 @@ class WorkflowNyuki(Nyuki):
 
     async def setup(self):
         self.engine = Engine(loop=self.loop)
-        asyncio.ensure_future(self.reload_from_storage())
+        self.storage = MongoStorage(**self.mongo_config)
         for topic in self.topics:
             asyncio.ensure_future(self.bus.subscribe(
                 topic, self.workflow_event
@@ -233,23 +233,34 @@ class WorkflowNyuki(Nyuki):
             self.raft.register('failures', self.failure_handler)
 
     async def reload(self):
-        asyncio.ensure_future(self.reload_from_storage())
+        self.storage = MongoStorage(**self.mongo_config)
 
     async def teardown(self):
         if self.engine:
             await self.engine.stop()
 
-    def new_workflow(self, template, instance, **kwargs):
+    def retain_workflow(self, template_dict, instance, **kwargs):
         """
-        Keep in memory a workflow template/instance pair.
+        Keep track of an already started workflow.
         """
-        wflow = WorkflowInstance(template, instance, **kwargs)
+        wflow = WorkflowInstance(template_dict, instance, **kwargs)
         self.running_workflows[instance.uid] = wflow
         if 'memory' in self._services and self.memory.available:
             asyncio.ensure_future(
                 self.write_report(wflow.report(), False)
             )
         return wflow
+
+    def new_workflow(self, template_dict, data):
+        """
+        Start a new workflow and keep track of it.
+        """
+        template = WorkflowTemplate.from_dict(template_dict)
+        # Avoid using the engine's workflow selector.
+        instance = self.engine._try_run(template, data)
+        if not instance:
+            return
+        return self.retain_workflow(template_dict, instance)
 
     async def report_workflow(self, event):
         """
@@ -345,39 +356,9 @@ class WorkflowNyuki(Nyuki):
         """
         New bus event received, trigger workflows if needed.
         """
-        templates = {}
-        # Retrieve full workflow templates
-        wf_templates = self.engine.selector.select(efrom)
-        for wftmpl in wf_templates:
-            template = await self.storage.templates.get(
-                wftmpl.uid,
-                draft=False,
-                with_metadata=True
-            )
-            templates[wftmpl.uid] = template[0]
-        # Trigger workflows
-        instances = await self.engine.data_received(data, efrom)
-        for instance in instances:
-            self.new_workflow(templates[instance.template.uid], instance)
-
-    async def reload_from_storage(self):
-        """
-        Check mongo, retrieve and load all templates
-        """
-        self.storage = MongoStorage(**self.mongo_config)
-
-        templates = await self.storage.templates.get_all(
-            full=True,
-            latest=True,
-            with_metadata=False
-        )
-
-        for template in templates:
-            try:
-                await self.engine.load(WorkflowTemplate.from_dict(template))
-            except Exception as exc:
-                # Means a bad workflow is in database, report it
-                reporting.exception(exc)
+        templates = await self.storage.templates.get_for_topic(efrom)
+        for template_dict in templates:
+            self.new_workflow(template_dict, data)
 
     @memsafe
     async def failure_handler(self, instances):

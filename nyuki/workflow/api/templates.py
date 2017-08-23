@@ -151,6 +151,34 @@ class TemplateCollection:
 
         return templates
 
+    async def get_for_topic(self, topic):
+        """
+        Return the latest templates (non-draft) that wait
+        for a certain topic.
+        """
+        query = {'topics': topic, 'draft': False}
+
+        cursor = self._templates.find(query, {'_id': 0})
+        cursor.sort('version', DESCENDING)
+        template_list = await cursor.to_list(None)
+
+        # Retrieve the latest versions
+        template_store = {}
+        for template in template_list:
+            if template['id'] not in template_store:
+                template_store[template['id']] = template
+
+        # Do migrations if the templates are fetched in full.
+        templates = []
+        for template in template_store.values():
+            # Return only the latest versions of templates
+            if template['version'] == await self.get_last_version(template['id']):
+                # Migrate if necessary
+                await self._migrate(template)
+                templates.append(template)
+
+        return templates
+
     async def get_last_version(self, tid):
         """
         Return the highest version of a template
