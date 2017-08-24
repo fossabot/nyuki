@@ -18,7 +18,7 @@ class AsyncMock(MagicMock):
 
 
 TEMPLATES = {
-    '1.0': {
+    'trigger': {
         'id': 'workflow-template-uid',
         'title': 'test',
         'policy': 'start-new',
@@ -45,12 +45,11 @@ class MigrationTests(TestCase):
     def tearDown(self):
         self.loop.close()
 
-    def test_trigger_4_0(self):
-        os.environ['SURYCAT_VERSION'] = '4.0'
+    def test_trigger_1(self):
         async def test():
-            template = deepcopy(TEMPLATES['1.0'])
+            template = deepcopy(TEMPLATES['trigger'])
             await TemplateCollection._migrate(AsyncMock(), template)
-            self.assertEquals(template['surycat_version'], '4.0')
+            self.assertEquals(template['tasks'][0]['scheme'], 1)
             config = template['tasks'][0]['config']
             self.assertEquals(config['template']['service'], 'pipeline')
             self.assertEquals(config['template']['id'], 'task-template-uid')
@@ -58,13 +57,12 @@ class MigrationTests(TestCase):
             self.assertEquals(config['blocking']['timeout'], 6000)
         self.loop.run_until_complete(test())
 
-    def test_trigger_4_0_no_timeout(self):
-        os.environ['SURYCAT_VERSION'] = '4.0'
+    def test_trigger_1_no_timeout(self):
         async def test():
-            template = deepcopy(TEMPLATES['1.0'])
+            template = deepcopy(TEMPLATES['trigger'])
             del template['tasks'][0]['config']['timeout']
             await TemplateCollection._migrate(AsyncMock(), template)
-            self.assertEquals(template['surycat_version'], '4.0')
+            self.assertEquals(template['tasks'][0]['scheme'], 1)
             config = template['tasks'][0]['config']
             self.assertEquals(config['template']['service'], 'pipeline')
             self.assertEquals(config['template']['id'], 'task-template-uid')
