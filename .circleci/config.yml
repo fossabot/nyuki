@@ -4,6 +4,7 @@ jobs:
     name: Run nyuki Python test suites
     docker:
       - image: python:3.6-alpine3.6
+      - image: circleci/mongo:3.4
     steps:
       - checkout
       - run: apk add --update --virtual .build python3-dev make g++
