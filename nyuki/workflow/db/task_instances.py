@@ -4,7 +4,7 @@ from bson.codec_options import CodecOptions
 
 
 log = logging.getLogger(__name__)
-WS_FILTERS = ('quorum', 'status', 'twilio_error', 'diff')
+WS_FILTERS = ('quorum', 'status', 'twilio_error', 'diff', 'missing_data')
 
 
 class TaskInstancesCollection:
