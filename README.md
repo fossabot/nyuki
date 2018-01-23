@@ -3,6 +3,7 @@
 [![Circle CI](https://img.shields.io/circleci/project/optiflows/nyuki/master.svg)](https://circleci.com/gh/optiflows/nyuki)
 [![pypi version](http://img.shields.io/pypi/v/nyuki.svg)](https://pypi.python.org/pypi/nyuki)
 [![python versions](https://img.shields.io/pypi/pyversions/nyuki.svg)](https://pypi.python.org/pypi/nyuki/)
+[![FOSSA Status](https://app.fossa.io/api/projects/git%2Bgithub.com%2Foptiflows%2Fnyuki.svg?type=shield)](https://app.fossa.io/projects/git%2Bgithub.com%2Foptiflows%2Fnyuki?ref=badge_shield)
 
 
 ## tl;dr
@@ -44,3 +45,7 @@ Read more about the lib. in the [wiki](https://github.com/optiflows/nyuki/wiki):
 ## Contributing
 
 We always welcome great ideas. If you want to hack on the library, a [guide](CONTRIBUTING.md) is dedicated to it and describes the various steps involved.
+
+
+## License
+[![FOSSA Status](https://app.fossa.io/api/projects/git%2Bgithub.com%2Foptiflows%2Fnyuki.svg?type=large)](https://app.fossa.io/projects/git%2Bgithub.com%2Foptiflows%2Fnyuki?ref=badge_large)
